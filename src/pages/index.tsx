@@ -1,109 +1,125 @@
-import { useState } from "react";
+import {useState} from "react";
 import { trpc } from "../utils/trpc";
 import { useQueryClient } from "@tanstack/react-query";
+import { object, string, TypeOf } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { SubmitHandler, useForm } from "react-hook-form";
 
-interface FormData {
-  id: string;
-  title: string;
-  content: string;
-}
-export default function Home() {
-  const [form, setForm] = useState<FormData>({
-    id: "",
-    title: "",
-    content: "",
-  });
 
+
+const createNoteSchema = object({
+  title: string().min(1, "Title is required"),
+  content: string().min(1, "Content is required"),
+});
+type CreateNoteInput = TypeOf<typeof createNoteSchema>;
+
+const  Home = () => {
+  const [updateID, setUpdateID] = useState<any>(null);
+  const queryClient = useQueryClient();
+  // Create
   const { mutate: createNote } = trpc.createNote.useMutation({
     onSuccess() {
       queryClient.invalidateQueries([["getNotes"]]);
-      setForm({
-        id: "",
-        title: "",
-        content: "",
-      });
+      methods.reset({title:"",content:""})
     },
     onError(error) {
       console.log(error);
     },
   });
 
+  // Get
   const { data: notes } = trpc.getNotes.useQuery();
 
-  const queryClient = useQueryClient();
+  // Delete
   const { mutate: deleteNote } = trpc.deleteNote.useMutation({
     onSuccess() {
       queryClient.invalidateQueries([["getNotes"]]);
-      console.log("deleted success");
+     console.log("deleted success")
     },
     onError(error) {
-      console.log(error);
+     console.log(error)
     },
   });
 
+  // Update
   const { mutate: updateNote } = trpc.updateNote.useMutation({
     onSuccess() {
       queryClient.invalidateQueries([["getNotes"]]);
       console.log("Note updated successfully");
-      setForm({
-        id: "",
-        title: "",
-        content: "",
-      });
+      methods.reset({title:"",content:""})
+      setUpdateID(null)
     },
     onError(error) {
       console.log(error);
     },
   });
+ 
+  // zod
+  const methods = useForm<CreateNoteInput>({
+    resolver: zodResolver(createNoteSchema),
+  });
 
-  const deleteBtn = (noteId: string) => {
-    if (window.confirm("Are you sure")) {
-      deleteNote({ noteId: noteId.toString() });
-    }
-  };
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } =  methods; 
 
   //  Submit button
-  const handleSubmit = async (data: FormData) => {
-    try {
-      if (form.id === "") {
-        createNote(data);
-      } else {
-        updateNote({ params: { noteId: data.id.toString() }, body: data });
-      }
+  const onSubmitHandler:SubmitHandler<CreateNoteInput> = async (data) =>{
+      try {
+        if(updateID === null) {
+          createNote(data);
+        }else{
+          updateNote({ params: { noteId: updateID.toString() }, body:data})
+        }
     } catch (error) {
       console.log(error);
     }
-  };
+  }
+
+  // Delete button
+  const deleteBtn=(noteId:string)=>{
+    if (window.confirm("Are you sure")) {
+      deleteNote({ noteId:noteId.toString()});
+    }
+  }
 
   if (!notes) return <p>Loading ....</p>;
 
   return (
     <>
       <div className="mt-10">
-        <h1 className="text-center font-bold text-2xl mt-4">Notes</h1>
+        <h1 className="text-center font-bold text-2xl mt-4 mb-4">Notes</h1>
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSubmit(form);
-          }}
-          className="w-auto min-w-[25%] max-w-min mx-auto space-y-6 flex flex-col items-stretch"
+        onSubmit={handleSubmit(onSubmitHandler)}
+          className="w-auto min-w-[28%] max-w-min mx-auto space-y-6 flex flex-col items-stretch"
         >
+          <div>
           <input
             type="text"
             placeholder="Title"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className="border-2 rounded border-gray-600 p-1"
+            {...register("title")}
+            className={`border-2 rounded border-gray-600 p-1 ${errors.title && "border-red-500"} min-w-[100%] max-w-min`}
           />
+          <p className="text-xs italic text-red-500 mt-2">
+            {errors.title?.message}
+          </p>
+          </div>
 
+          <div>
           <textarea
             placeholder="Content"
-            value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.target.value })}
-            className="border-2 rounded border-gray-600 p-1"
+            {...register("content")}
+            className={`border-2 rounded border-gray-600 p-1 ${errors.content && "border-red-500"} min-w-[100%] max-w-min`}
           />
+          <p className="text-xs italic text-red-500 mt-1">
+          {errors.content?.message}
+          </p>
+           </div>
+
           <button type="submit" className="bg-blue-500 text-white rounded p-1">
-            {form.id === "" ? "ADD +" : "Update"}
+            { updateID === null ?"ADD +":"Update"}
           </button>
         </form>
         <div className="w-auto min-w-[40%] max-w-min mx-auto mt-8">
@@ -124,13 +140,10 @@ export default function Home() {
                   <td className="border border-slate-600 ">{note.content}</td>
                   <td className="border border-slate-600 ">
                     <button
-                      onClick={() =>
-                        setForm({
-                          title: note.title,
-                          content: note.content,
-                          id: note.id.toString(),
-                        })
-                      }
+                      onClick={() =>{
+                        setUpdateID(note.id.toString())
+                        methods.reset(note)
+                      }}
                       className="bg-blue-500 text-white rounded px-3"
                     >
                       Update
@@ -151,3 +164,5 @@ export default function Home() {
     </>
   );
 }
+
+export default Home;
